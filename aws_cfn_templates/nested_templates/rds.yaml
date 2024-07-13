@@ -1,0 +1,72 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: "Stack to deploy an RDS Aurora cluster with two instances in two AZs"
+
+Parameters:
+  DbUsername:
+    Description: "Database username"
+    Type: String
+
+  DbUserPassword:
+    Description: "Database user password"
+    Type: String
+    NoEcho: true
+
+  ProjectName:
+    Description: "Project name"
+    Type: String
+
+  DbInstanceType:
+    Description: "Database instance type"
+    Type: String
+
+  RdsDbSecurityGroup:
+    Description: "Security group for the RDS database"
+    Type: String
+
+  RdsDbSubnetGroup:
+    Description: "RDS database subnet group"
+    Type: String
+
+Resources:
+  RdsDbCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Delete
+    Properties:
+      Engine: aurora-mysql
+      EngineVersion: 5.7.mysql_aurora.2.12.2
+      DBClusterIdentifier: !Join ["-", ["db", "cluster", !Ref ProjectName]]
+      DatabaseName: db
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbUserPassword
+      DBSubnetGroupName: !Ref RdsDbSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref RdsDbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  RdsDbInstance1:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      Engine: aurora-mysql
+      DBInstanceClass: !Ref DbInstanceType
+      DBClusterIdentifier: !Ref RdsDbCluster
+      AvailabilityZone: !Select ["0", !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  RdsDbInstance2:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      Engine: aurora-mysql
+      DBInstanceClass: db.t3.small
+      DBClusterIdentifier: !Ref RdsDbCluster
+      AvailabilityZone: !Select ["1", !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName

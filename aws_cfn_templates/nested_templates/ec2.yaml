@@ -1,0 +1,159 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: "Stack to deploy two bastion EC2 instances in two public subnets in two AZs"
+
+Parameters:
+  BastionEc2InstanceType:
+    Description: "EC2 instance type"
+    Type: String
+
+  BastionSecurityGroup:
+    Description: "Security group for bastion EC2 instance"
+    Type: String
+
+  EfsFileSystem:
+    Description: "EFS file system"
+    Type: String
+
+  KeyPairName:
+    Description: "Name of an existing EC2 KeyPair"
+    Type: String
+
+  PublicSubnet1:
+    Description: "Public subnet 1"
+    Type: String
+
+  PublicSubnet2:
+    Description: "Public subnet 2"
+    Type: String
+
+  ProjectName:
+    Description: "Project name"
+    Type: String
+
+Mappings:
+  AmiIdMapByRegion:
+    # Amazon Linux 2023 AMI (updated on 08-07-2024)
+    us-east-1:
+      AmiId: ami-06c68f701d8090592
+    us-west-2:
+      AmiId: ami-0604d81f2fd264c7b
+
+Resources:
+  BastionHost1:
+    Type: AWS::EC2::Instance
+    Metadata:
+      Comment: "Install MySQL client"
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              mariadb105: []
+        services:
+          sysvinit:
+            cfn-hup:
+              enabled: true
+              ensureRunning: true
+              files:
+                - "/etc/cfn/cfn-hup.conf"
+                - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      InstanceType: !Ref BastionEc2InstanceType
+      ImageId: !FindInMap [AmiIdMapByRegion, !Ref "AWS::Region", AmiId]
+      KeyName: !Ref KeyPairName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          SubnetId: !Ref PublicSubnet1
+          AssociatePublicIpAddress: true
+          GroupSet:
+            - !Ref BastionSecurityGroup
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            
+            # Install the AWS CloudFormation helper scripts and NFS client
+            yum install -y aws-cfn-bootstrap amazon-efs-utils
+            
+            # Mount the EFS volume
+            mkdir -p /mnt/efs
+            mount -t efs ${EfsFileSystem}:/ /mnt/efs
+            echo "${EfsFileSystem}:/ /mnt/efs efs defaults,_netdev 0 0" >> /etc/fstab
+            
+            # Start cfn-init
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource BastionHost1 --region ${AWS::Region}
+            
+            # Signal the status from cfn-init
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionHost1 --region ${AWS::Region}
+      Tags:
+        - Key: Name
+          Value: !Join ["-", ["bastion1", !Ref ProjectName]]
+        - Key: ProjectName
+          Value: !Ref ProjectName
+
+  BastionHost2:
+    Type: AWS::EC2::Instance
+    Metadata:
+      Comment: "Install MySQL client"
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              mariadb105: []
+        services:
+          sysvinit:
+            cfn-hup:
+              enabled: true
+              ensureRunning: true
+              files:
+                - "/etc/cfn/cfn-hup.conf"
+                - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      InstanceType: !Ref BastionEc2InstanceType
+      ImageId: !FindInMap [AmiIdMapByRegion, !Ref "AWS::Region", AmiId]
+      KeyName: !Ref KeyPairName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          SubnetId: !Ref PublicSubnet2
+          AssociatePublicIpAddress: true
+          GroupSet:
+            - !Ref BastionSecurityGroup
+      UserData:
+        Fn::Base64:
+          !Sub |
+          #!/bin/bash -xe
+          
+          # Install the AWS CloudFormation helper scripts and NFS client
+          yum install -y aws-cfn-bootstrap amazon-efs-utils
+          
+          # Mount the EFS volume
+          mkdir -p /mnt/efs
+          mount -t efs ${EfsFileSystem}:/ /mnt/efs
+          echo "${EfsFileSystem}:/ /mnt/efs efs defaults,_netdev 0 0" >> /etc/fstab
+          
+          # Start cfn-init
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource BastionHost2 --region ${AWS::Region}
+          
+          # Signal the status from cfn-init
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionHost2 --region ${AWS::Region}
+      Tags:
+        - Key: Name
+          Value: !Join ["-", ["bastion2", !Ref ProjectName]]
+        - Key: ProjectName
+          Value: !Ref ProjectName
+
+Outputs:
+  Bastion1SshCommand:
+    Description: "SSH command to connect to bastion 1"
+    Value: !Join ["", ["ssh -i ", !Ref KeyPairName, ".pem ", "ec2-user@", !GetAtt BastionHost1.PublicIp]]
+
+  Bastion2SshCommand:
+    Description: "SSH command to connect to bastion 2"
+    Value: !Join ["", ["ssh -i ", !Ref KeyPairName, ".pem ", "ec2-user@", !GetAtt BastionHost2.PublicIp]]

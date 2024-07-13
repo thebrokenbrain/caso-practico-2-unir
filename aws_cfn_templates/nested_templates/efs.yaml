@@ -1,0 +1,138 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: "Stack to deploy an EFS file system with two mount targets in two AZs"
+
+Parameters:
+  EfsSecurityGroup:
+    Description: "Security group for EFS"
+    Type: String
+
+  PrivateSubnet1:
+    Description: "Private subnet 1"
+    Type: String
+
+  PrivateSubnet2:
+    Description: "Private subnet 2"
+    Type: String
+
+  ProjectName:
+    Description: "Project name"
+    Type: String
+
+Resources:
+  EfsFileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Delete
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  EfsMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+  EfsMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+  EfsAccessPointModules:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      PosixUser:
+        Uid: "33"
+        Gid: "33"
+      RootDirectory:
+        CreationInfo:
+          OwnerGid: "33"
+          OwnerUid: "33"
+          Permissions: "0775"
+        Path: "/modules"
+      AccessPointTags:
+        - Key: Name
+          Value: "Modules"
+
+  EfsAccessPointProfiles:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      PosixUser:
+        Uid: "33"
+        Gid: "33"
+      RootDirectory:
+        CreationInfo:
+          OwnerGid: "33"
+          OwnerUid: "33"
+          Permissions: "0775"
+        Path: "/profiles"
+      AccessPointTags:
+        - Key: Name
+          Value: "Profiles"
+
+  EfsAccessPointSites:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      PosixUser:
+        Uid: "33"
+        Gid: "33"
+      RootDirectory:
+        CreationInfo:
+          OwnerGid: "33"
+          OwnerUid: "33"
+          Permissions: "0775"
+        Path: "/sites"
+      AccessPointTags:
+        - Key: Name
+          Value: "Sites"
+
+  EfsAccessPointThemes:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      PosixUser:
+        Uid: "33"
+        Gid: "33"
+      RootDirectory:
+        CreationInfo:
+          OwnerGid: "33"
+          OwnerUid: "33"
+          Permissions: "0775"
+        Path: "/themes"
+      AccessPointTags:
+        - Key: Name
+          Value: "Themes"
+
+Outputs:
+  EfsAccessPointModules:
+    Description: "EFS access point for modules"
+    Value: !Ref EfsAccessPointModules
+
+  EfsAccessPointProfiles:
+    Description: "EFS access point for profile"
+    Value: !Ref EfsAccessPointProfiles
+
+  EfsAccessPointSites:
+    Description: "EFS access point for sites"
+    Value: !Ref EfsAccessPointSites
+
+  EfsAccessPointThemes:
+    Description: "EFS access point for themes"
+    Value: !Ref EfsAccessPointThemes
+
+  EfsFileSystem:
+    Description: "EFS file system"
+    Value: !Ref EfsFileSystem

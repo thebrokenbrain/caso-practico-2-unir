@@ -1,0 +1,233 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: "Stack to deploy an ECS Fargate cluster for Drupal CMS"
+
+Parameters:
+  AlbTargetGroup:
+    Description: "ALB target group"
+    Type: String
+
+  ContainerSecurityGroup:
+    Description: "Security group for containers"
+    Type: String
+
+  DesiredCapacity:
+    Description: "Desired capacity"
+    Type: Number
+
+  DrupalImage:
+    Description: "Drupal image"
+    Type: String
+
+  EfsAccessPointModules:
+    Description: "EFS access point for modules"
+    Type: String
+
+  EfsAccessPointProfiles:
+    Description: "EFS access point for profiles"
+    Type: String
+
+  EfsAccessPointSites:
+    Description: "EFS access point for sites"
+    Type: String
+
+  EfsAccessPointThemes:
+    Description: "EFS access point for themes"
+    Type: String
+
+  EfsFileSystem:
+    Description: "EFS file system"
+    Type: String
+
+  MaxCpu:
+    Description: "Maximum CPU utilization"
+    Type: Number
+
+  MaxMemory:
+    Description: "Maximum memory utilization"
+    Type: Number
+
+  PrivateSubnet1:
+    Description: "Private subnet 1"
+    Type: String
+
+  PrivateSubnet2:
+    Description: "Private subnet 2"
+    Type: String
+
+  ProjectName:
+    Description: "Project name"
+    Type: String
+
+  TaskRole:
+    Description: "Task role"
+    Type: String
+
+Resources:
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Join ["-", ["ecs", "cluster", !Ref ProjectName]]
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 3
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      TaskRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${TaskRole}"
+      ExecutionRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${TaskRole}"
+      RequiresCompatibilities:
+        - "FARGATE"
+      Cpu: !Ref MaxCpu
+      Memory: !Ref MaxMemory
+      NetworkMode: "awsvpc"
+      ContainerDefinitions:
+        - Name: "initContainer"
+          Image: !Ref DrupalImage
+          Command:
+            - "sh"
+            - "-c"
+            - |
+              if [ ! -f /mnt/modules/.lock ]; then touch /mnt/modules/.lock && cp -prR /opt/drupal/web/modules/* /mnt/modules; fi
+              if [ ! -f /mnt/profiles/.lock ]; then touch /mnt/profiles/.lock && cp -prR /opt/drupal/web/profiles/* /mnt/profiles; fi
+              if [ ! -f /mnt/themes/.lock ]; then touch /mnt/themes/.lock && cp -prR /opt/drupal/web/themes/* /mnt/themes; fi
+              if [ ! -f /mnt/sites/.lock ]; then touch /mnt/sites/.lock && cp -prR /opt/drupal/web/sites/* /mnt/sites; fi
+          Essential: false
+          MountPoints:
+            - ContainerPath: "/mnt/modules"
+              SourceVolume: "modules"
+            - ContainerPath: "/mnt/profiles"
+              SourceVolume: "profiles"
+            - ContainerPath: "/mnt/sites"
+              SourceVolume: "sites"
+            - ContainerPath: "/mnt/themes"
+              SourceVolume: "themes"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: initContainer
+        - Name: "drupal"
+          Image: !Ref DrupalImage
+          DependsOn:
+            - Condition: "COMPLETE"
+              ContainerName: "initContainer"
+          Essential: true
+          MountPoints:
+            - ContainerPath: "/var/www/html/modules/"
+              SourceVolume: "modules"
+            - ContainerPath: "/var/www/html/profiles/"
+              SourceVolume: "profiles"
+            - ContainerPath: "/var/www/html/sites/"
+              SourceVolume: "sites"
+            - ContainerPath: "/var/www/html/themes/"
+              SourceVolume: "themes"
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: drupal
+          HealthCheck:
+            Command: [ "sh", "-c", "curl -f http://localhost/ || exit 1" ]
+            Interval: 15
+            Retries: 3
+            Timeout: 5
+            StartPeriod: 120
+      Volumes:
+        - Name: "themes"
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EfsFileSystem
+            RootDirectory: "/"
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPointThemes
+        - Name: "sites"
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EfsFileSystem
+            RootDirectory: "/"
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPointSites
+        - Name: "profiles"
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EfsFileSystem
+            RootDirectory: "/"
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPointProfiles
+        - Name: "modules"
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EfsFileSystem
+            RootDirectory: "/"
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPointModules
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      EnableExecuteCommand: true
+      LaunchType: FARGATE
+      ServiceName: !Join ["-", ["service", !Ref ProjectName]]
+      SchedulingStrategy: REPLICA
+      DesiredCount: !Ref DesiredCapacity
+      LoadBalancers:
+        - ContainerName: "drupal"
+          ContainerPort: 80
+          TargetGroupArn: !Ref AlbTargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  AutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: !Ref DesiredCapacity
+      MinCapacity: 2
+      ResourceId: !Join ["/", [service, !Ref EcsCluster, !GetAtt EcsService.Name]]
+      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  AutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Join ["", [!Ref ProjectName, 'AutoScalingPolicy']]
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        DisableScaleIn: false
+        TargetValue: 80
+        ScaleInCooldown: 30
+        ScaleOutCooldown: 30
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization

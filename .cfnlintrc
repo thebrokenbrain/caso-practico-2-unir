@@ -1,0 +1,12 @@
+templates:
+  - aws_cfn_templates/aws-cfn-s3.yaml
+  - aws_cfn_templates/aws-cfn-main-template.yaml
+  - aws_cfn_templates/nested_templates/alb.yaml
+  - aws_cfn_templates/nested_templates/ec2.yaml
+  - aws_cfn_templates/nested_templates/ecs.yaml
+  - aws_cfn_templates/nested_templates/efs.yaml
+  - aws_cfn_templates/nested_templates/rds.yaml
+  - aws_cfn_templates/nested_templates/sg.yaml
+  - aws_cfn_templates/nested_templates/vpc.yaml
+ignore_checks:
+  - W1011

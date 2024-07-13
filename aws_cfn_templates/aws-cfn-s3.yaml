@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: AWS CloudFormation template to create an S3 bucket with server-side encryption and versioning enabled.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: S3 bucket name
+
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  BucketName:
+    Description: Bucket S3 where nested templates are stored
+    Value: !Ref Bucket

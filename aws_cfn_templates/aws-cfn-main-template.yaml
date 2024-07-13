@@ -1,0 +1,255 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  This template deploys a highly available, elastic and scalable LAMP stack using AWS.
+
+Parameters:
+  BastionEc2InstanceType:
+    Description: Instance type for the Bastion host
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+
+  BucketName:
+    Description: "Name of the S3 bucket where nested CloudFormation templates are stored"
+    Type: String
+
+  DesiredCapacity:
+    Description: "Number of tasks running simultaneously in the ECS cluster"
+    Type: Number
+    Default: 2
+    MinValue: 2
+    MaxValue: 4
+
+  DbInstanceType:
+    Description: "Database instance class"
+    Type: String
+    Default: db.t3.small
+    AllowedValues:
+      - db.t3.small
+      - db.t3.medium
+
+  DbUsername:
+    Description: "Database username"
+    Type: String
+
+  DbUserPassword:
+    Description: "Database user password"
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    ConstraintDescription: "Password must be at least 8 characters"
+
+  DrupalImage:
+    Description: "Drupal image to use in the ECS task"
+    Type: String
+    Default: "josemi/drupal-ecs-boilerplate:latest"
+
+  KeyPairName:
+    Description: "Name of an existing EC2 KeyPair to connect to the Bastion hosts"
+    Type: AWS::EC2::KeyPair::KeyName
+    AllowedPattern: "^(?!vockey).+"
+    ConstraintDescription: "select a key pair other than vockey"
+
+  MaxCpuAndMemory:
+    Description: "Select the maximum CPU and memory for each ECS task"
+    Type: String
+    Default: ".25vCpu-512MB"
+    AllowedValues:
+      - ".25vCpu-512MB"
+      - ".5vCpu-1GB"
+      - "1vCpu-2GB"
+      - "2vCPU-4GB"
+      - "4vCPU-8GB"
+
+  PublicSubnet1Cidr:
+    Description: "CIDR block for the public subnet in the first Availability Zone"
+    Type: String
+    Default: "10.0.10.0/24"
+
+  PrivateSubnet1Cidr:
+    Description: "CIDR block for the private subnet in the first Availability Zone"
+    Type: String
+    Default: "10.0.11.0/24"
+
+  PublicSubnet2Cidr:
+    Description: "CIDR block for the public subnet in the second Availability Zone"
+    Type: String
+    Default: "10.0.20.0/24"
+
+  PrivateSubnet2Cidr:
+    Description: "CIDR block for the private subnet in the second Availability Zone"
+    Type: String
+    Default: "10.0.21.0/24"
+
+  ProjectName:
+    Description: "Name of the project"
+    Type: String
+    Default: "my-website"
+    AllowedPattern: "^[a-zA-Z0-9-]{1,30}$"
+    ConstraintDescription: "project name must be up to 30 characters, alphanumeric and hyphens only"
+
+  TaskRole:
+    Description: "IAM role for the ECS container agent and Docker daemon"
+    Type: String
+    Default: LabRole
+
+  VpcCidr:
+    Description: "CIDR block for the VPC"
+    Type: String
+    Default: "10.0.0.0/16"
+
+Mappings:
+  CpuMemoryMap:
+    .25vCpu-512MB:
+      Cpu: 256
+      Memory: 512
+    .5vCpu-1GB:
+      Cpu: 512
+      Memory: 1024
+    1vCpu-2GB:
+      Cpu: 1024
+      Memory: 2048
+    2vCPU-4GB:
+      Cpu: 2048
+      Memory: 4096
+    4vCPU-8GB:
+      Cpu: 4096
+      Memory: 8192
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "General configuration"
+        Parameters:
+          - BucketName
+          - KeyPairName
+          - TaskRole
+          - ProjectName
+
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcCidr
+          - PublicSubnet1Cidr
+          - PublicSubnet2Cidr
+          - PrivateSubnet1Cidr
+          - PrivateSubnet2Cidr
+      - Label:
+          default: "EC2 Configuration"
+        Parameters:
+          - BastionEc2InstanceType
+      - Label:
+          default: "RDS Configuration"
+        Parameters:
+          - DbInstanceType
+          - DbUsername
+          - DbUserPassword
+      - Label:
+          default: "ECS Configuration"
+        Parameters:
+          - DrupalImage
+          - DesiredCapacity
+          - MaxCpuAndMemory
+
+Resources:
+  # Network stack
+  Vpc:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.amazonaws.com/vpc.yaml"
+      Parameters:
+        PublicSubnet1Cidr: !Ref PublicSubnet1Cidr
+        PublicSubnet2Cidr: !Ref PublicSubnet2Cidr
+        PrivateSubnet1Cidr: !Ref PrivateSubnet1Cidr
+        PrivateSubnet2Cidr: !Ref PrivateSubnet2Cidr
+        ProjectName: !Ref ProjectName
+        VpcCidr: !Ref VpcCidr
+
+  # Security Group stack
+  SecurityGroups:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.amazonaws.com/sg.yaml"
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Vpc: !GetAtt Vpc.Outputs.Vpc
+        VpcCidr: !Ref VpcCidr
+
+  # RDS MySQL Aurora stack
+  Rds:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.amazonaws.com/rds.yaml"
+      Parameters:
+        DbInstanceType: !Ref DbInstanceType
+        DbUsername: !Ref DbUsername
+        DbUserPassword: !Ref DbUserPassword
+        ProjectName: !Ref ProjectName
+        RdsDbSecurityGroup: !GetAtt SecurityGroups.Outputs.RdsDbSecurityGroup
+        RdsDbSubnetGroup: !GetAtt Vpc.Outputs.RdsDbSubnetGroup
+
+  # Elastic File System stack
+  Efs:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.amazonaws.com/efs.yaml"
+      Parameters:
+        EfsSecurityGroup: !GetAtt SecurityGroups.Outputs.EfsSecurityGroup
+        PrivateSubnet1: !GetAtt Vpc.Outputs.PrivateSubnet1
+        PrivateSubnet2: !GetAtt Vpc.Outputs.PrivateSubnet2
+        ProjectName: !Ref ProjectName
+
+  # Application Load Balancer stack
+  Alb:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.amazonaws.com/alb.yaml"
+      Parameters:
+        AlbSecurityGroup: !GetAtt SecurityGroups.Outputs.AlbSecurityGroup
+        PublicSubnet1: !GetAtt Vpc.Outputs.PublicSubnet1
+        PublicSubnet2: !GetAtt Vpc.Outputs.PublicSubnet2
+        ProjectName: !Ref ProjectName
+        Vpc: !GetAtt Vpc.Outputs.Vpc
+
+  # ECS Fargate Cluster stack
+  Ecs:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.amazonaws.com/ecs.yaml"
+      Parameters:
+        AlbTargetGroup: !GetAtt Alb.Outputs.AlbTargetGroup
+        ContainerSecurityGroup: !GetAtt SecurityGroups.Outputs.ContainerSecurityGroup
+        DesiredCapacity: !Ref DesiredCapacity
+        DrupalImage: !Ref DrupalImage
+        EfsAccessPointModules: !GetAtt Efs.Outputs.EfsAccessPointModules
+        EfsAccessPointProfiles: !GetAtt Efs.Outputs.EfsAccessPointProfiles
+        EfsAccessPointSites: !GetAtt Efs.Outputs.EfsAccessPointSites
+        EfsAccessPointThemes: !GetAtt Efs.Outputs.EfsAccessPointThemes
+        EfsFileSystem: !GetAtt Efs.Outputs.EfsFileSystem
+        MaxCpu: !FindInMap [CpuMemoryMap, !Ref MaxCpuAndMemory, Cpu]
+        MaxMemory: !FindInMap [CpuMemoryMap, !Ref MaxCpuAndMemory, Memory]
+        PrivateSubnet1: !GetAtt Vpc.Outputs.PrivateSubnet1
+        PrivateSubnet2: !GetAtt Vpc.Outputs.PrivateSubnet2
+        ProjectName: !Ref ProjectName
+        TaskRole: !Ref TaskRole
+
+  # EC2 stack
+  Ec2:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.amazonaws.com/ec2.yaml"
+      Parameters:
+        BastionEc2InstanceType: !Ref BastionEc2InstanceType
+        BastionSecurityGroup: !GetAtt SecurityGroups.Outputs.BastionSecurityGroup
+        EfsFileSystem: !GetAtt Efs.Outputs.EfsFileSystem
+        KeyPairName: !Ref KeyPairName
+        PublicSubnet1: !GetAtt Vpc.Outputs.PublicSubnet1
+        PublicSubnet2: !GetAtt Vpc.Outputs.PublicSubnet2
+        ProjectName: !Ref ProjectName

@@ -1,0 +1,135 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Stack to deploy security groups"
+
+Parameters:
+  ProjectName:
+    Description: "Project name"
+    Type: String
+
+  Vpc:
+    Description: "VPC"
+    Type: String
+
+  VpcCidr:
+    Description: "VPC CIDR"
+    Type: String
+
+Resources:
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for application load balancer"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - CidrIp: !Ref VpcCidr
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for bastion hosts"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for containers"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+        - CidrIp: !Ref VpcCidr
+          FromPort: 2049
+          IpProtocol: tcp
+          ToPort: 2049
+        - CidrIp: !Ref VpcCidr
+          FromPort: 3306
+          IpProtocol: tcp
+          ToPort: 3306
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for EFS"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: !Ref VpcCidr
+          IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+  RdsDbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Database security group"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref VpcCidr
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref VpcCidr
+      Tags:
+        - Key: Name
+          Value: !Ref ProjectName
+
+Outputs:
+  AlbSecurityGroup:
+    Description: "Security group for application load balancer"
+    Value: !Ref AlbSecurityGroup
+
+  BastionSecurityGroup:
+    Description: "Security group for bastion EC2 instance"
+    Value: !Ref BastionSecurityGroup
+
+  ContainerSecurityGroup:
+    Description: "Security group for the container"
+    Value: !Ref ContainerSecurityGroup
+
+  EfsSecurityGroup:
+    Description: "Security group for EFS"
+    Value: !Ref EfsSecurityGroup
+
+  RdsDbSecurityGroup:
+    Description: "Security group for RDS database"
+    Value: !Ref RdsDbSecurityGroup
