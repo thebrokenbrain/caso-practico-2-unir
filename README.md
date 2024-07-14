@@ -6,7 +6,7 @@ Este repositorio contiene las plantillas de CloudFormation y operaciones necesar
 en AWS que permite la instalación del CMS Drupal en un entorno de alta disponibilidad y escalabilidad.
 
 # Requisitos
-- [Python 3.10 o superior](https://www.python.org/downloads/)
+- [Python 3.12](https://www.python.org/downloads/)
 - [pip](https://pip.pypa.io/en/stable/installation/)
 - [Pipenv](https://pypi.org/project/pipenv/)
 - [make](https://www.gnu.org/software/make/)
