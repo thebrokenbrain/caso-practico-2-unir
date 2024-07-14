@@ -5,6 +5,9 @@ Computing. Arquitecturas y Soluciones" impartido por la UNIR.
 Este repositorio contiene las plantillas de CloudFormation y operaciones necesarias para desplegar una infraestructura
 en AWS que permite la instalación del CMS Drupal en un entorno de alta disponibilidad y escalabilidad.
 
+# Diagrama de la infraestructura
+![Diagrama de la infraestructura](./images/diagram.png)
+
 # Requisitos
 - [Python 3.12](https://www.python.org/downloads/)
 - [pip](https://pip.pypa.io/en/stable/installation/)
@@ -60,8 +63,36 @@ el directorio actual.
 - Crear un stack de CloudFormation en AWS con el nombre `stack-AWS_STACK_NAME` en donde se desplegará toda
 la infraestructura definida en las plantillas con unos parámetros por defecto.
 
-Si todo ha ido bien, accediendo a la URL del DNS público del balanceador de carga de la infraestructura desplegada
-se podrá ver la pantalla de instalación de Drupal.
+Los parámetros por defecto con los que se realiza el despliegue son los siguientes:
+
+```bash
+@aws cloudformation deploy \
+  --stack-name=XXXX \
+  --template-file=aws_cfn_templates/aws-cfn-main-template.yaml \
+  --parameter-overrides \
+      BastionEc2InstanceType=t2.micro \
+      BucketName=XXXX \
+      DesiredCapacity=2 \
+      DbInstanceType=db.t3.small \
+      DbUsername=admin \
+      DbUserPassword=XXXX \
+      DrupalImage="josemi/drupal-ecs-boilerplate:latest" \
+      KeyPairName=XXXX \
+      MaxCpuAndMemory=1vCpu-2GB \
+      PublicSubnet1Cidr=10.0.10.0/24 \
+      PrivateSubnet1Cidr=10.0.11.0/24 \
+      PublicSubnet2Cidr=10.0.20.0/24 \
+      PrivateSubnet2Cidr=10.0.21.0/24 \
+      ProjectName=myweb \
+      TaskRole=LabRole \
+      VpcCidr=10.0.0.0/16 \
+  --capabilities \
+      CAPABILITY_IAM \
+      CAPABILITY_NAMED_IAM
+```
+
+Si todo ha ido bien, accediendo a la URL del DNS público del balanceador de carga se podrá ver la pantalla de
+instalación de Drupal.
 
 # Eliminar la infraestructura en AWS
 
